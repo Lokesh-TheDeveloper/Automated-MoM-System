@@ -32,11 +32,18 @@ def get_meeting_transcript():
         response = requests.get(url, headers=headers)
         if response.status_code == 200:
             transcript_data = response.json()
-            print("Transcript Retrieved:", transcript_data)
-            return transcript_data
+            transcript_text = transcript_data.get("content", "")  # Extract text
+            
+            # Save transcript to a file
+            with open("meeting_transcript.txt", "w", encoding="utf-8") as f:
+                f.write(transcript_text)
+            
+            print("Transcript saved to meeting_transcript.txt")
+            return transcript_text
         else:
             print("Transcript not ready. Checking again in 5 minutes...")
             time.sleep(300)  # Wait 5 minutes before retrying
+
 
 def get_meeting_chat():
     meeting_data = get_meeting_details()
