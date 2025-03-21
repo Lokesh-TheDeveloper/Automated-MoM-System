@@ -1,69 +1,74 @@
+import smtplib
 import os
-import jinja2
+import requests
 from dotenv import load_dotenv
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 # Load environment variables
 load_dotenv()
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
+SMTP_EMAIL = os.getenv("SMTP_EMAIL")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+ACCESS_TOKEN = os.getenv("MS_GRAPH_ACCESS_TOKEN")
+MEETING_ID = os.getenv("MEETING_ID")
 
-# Load the meeting summary
-def load_summary(file_path="meeting_summary.txt"):
-    with open(file_path, "r", encoding="utf-8") as f:
-        return f.read()
-
-# Jinja2 template for MoM
-template_str = """
-Meeting Minutes (MoM)
-======================
-
-**Meeting Summary:**
-{{ summary }}
-
-**Key Decisions:**
-{% for decision in decisions %}
-- {{ decision }}
-{% endfor %}
-
-**Action Items:**
-{% for action in action_items %}
-- {{ action.task }} → Assigned to {{ action.assignee }} (Due: {{ action.due_date }})
-{% endfor %}
-
-"""
-
-def generate_mom(summary_text):
-    """Generate a structured MoM document using Jinja2."""
-    template = jinja2.Template(template_str)
+# Fetch meeting participants from Microsoft Graph API
+def get_meeting_participants():
+    url = f"https://graph.microsoft.com/v1.0/me/onlineMeetings/{MEETING_ID}"
+    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+    response = requests.get(url, headers=headers)
     
-    # Extract structured data from summary (assume format is correct)
-    sections = summary_text.split("**")
-    decisions = []
-    action_items = []
-    summary = sections[1].replace("Meeting Summary:", "").strip() if len(sections) > 1 else ""
+    if response.status_code == 200:
+        meeting_data = response.json()
+        participants = [
+            attendee["emailAddress"]["address"]
+            for attendee in meeting_data.get("participants", {}).get("attendees", [])
+        ]
+        return participants
+    else:
+        print("Error fetching participants:", response.json())
+        return []
+
+# Email function
+def send_mom_email(to_emails, mom_link):
+    msg = MIMEMultipart()
+    msg["From"] = SMTP_EMAIL
+    msg["To"] = ", ".join(to_emails)
+    msg["Subject"] = "Minutes of Meeting (MoM) - Automated System"
+
+    # Email body
+    body = f"""
+    Hello Team,
     
-    for section in sections:
-        if "Key Decisions:" in section:
-            decisions = [line.strip('- ') for line in section.split('\n') if line.startswith('-')]
-        elif "Action Items:" in section:
-            for line in section.split('\n'):
-                if '→' in line:
-                    parts = line.split('→')
-                    task = parts[0].strip('- ').strip()
-                    assigned_info = parts[1].split('(Due:')
-                    assignee = assigned_info[0].strip()
-                    due_date = assigned_info[1].replace(")", "").strip() if len(assigned_info) > 1 else ""
-                    action_items.append({"task": task, "assignee": assignee, "due_date": due_date})
+    The MoM document for our recent meeting is available here:
+    {mom_link}
     
-    # Render template
-    mom_content = template.render(summary=summary, decisions=decisions, action_items=action_items)
+    Please review and update action items as needed.
     
-    # Save MoM document
-    with open("meeting_mom.txt", "w", encoding="utf-8") as f:
-        f.write(mom_content)
-    
-    print("MoM document saved as meeting_mom.txt")
+    Best,
+    Automated MoM System
+    """
+    msg.attach(MIMEText(body, "plain"))
+
+    try:
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()  # Secure the connection
+        server.login(SMTP_EMAIL, SMTP_PASSWORD)
+        server.sendmail(SMTP_EMAIL, to_emails, msg.as_string())
+        server.quit()
+        print("MoM email successfully sent.")
+    except Exception as e:
+        print("Error sending email:", e)
 
 if __name__ == "__main__":
-    print("Loading meeting summary...")
-    summary_text = load_summary()
-    print("Generating MoM document...")
-    generate_mom(summary_text)
+    print("Fetching meeting participants...")
+    recipient_emails = get_meeting_participants()
+    
+    if recipient_emails:
+        mom_link = "https://onedrive.com/shared-link-to-mom"  # Replace with actual OneDrive link
+        print("Sending MoM email...")
+        send_mom_email(recipient_emails, mom_link)
+    else:
+        print("No participants found. Email not sent.")
