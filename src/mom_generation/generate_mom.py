@@ -79,4 +79,4 @@ if __name__ == "__main__":
         print("Sending MoM email...")
         send_mom_email(recipient_emails, mom_link)
     else:
-        print("No participants found. Email not sent.")
+        print("No participants found. Email not sent.") 
